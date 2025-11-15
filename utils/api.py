@@ -4,6 +4,7 @@ from google import genai
 from google.genai import types
 import requests
 import logging
+from dotenv import load_dotenv, find_dotenv
 
 
 logging.basicConfig(level=logging.WARNING)
@@ -13,6 +14,9 @@ logger = logging.getLogger(__name__)
 logging.getLogger('google').setLevel(logging.WARNING)
 logging.getLogger('google.genai').setLevel(logging.WARNING)
 logging.getLogger('httpx').setLevel(logging.WARNING)
+
+# Load environment variables from .env if present
+load_dotenv(find_dotenv(), override=False)
 
 # Read API keys from environment variables
 API_KEY = os.environ.get("GEMINI_API_KEY", "")

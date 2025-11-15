@@ -13,7 +13,9 @@ import glob
 
 # Import scoring prompts for Chinese and English
 from prompt.score_prompt_zh import generate_merged_score_prompt as zh_merged_score_prompt
+from prompt.score_prompt_zh import point_wise_score_prompt as zh_point_wise_prompt
 from prompt.score_prompt_en import generate_merged_score_prompt as en_merged_score_prompt
+from prompt.score_prompt_en import point_wise_score_prompt as en_point_wise_prompt
 from utils.score_calculator import calculate_weighted_scores
 from utils.json_extractor import extract_json_from_markdown
 from utils.clean_article import ArticleCleaner
@@ -56,7 +58,8 @@ def format_criteria_list(criteria_data):
         raise ValueError(f"Failed to serialize criteria to JSON: {e}")
 
 def process_single_item(task_data, target_articles_map, reference_articles_map, criteria_map, 
-                         llm_client, lock, pbar, max_retries, language):
+                         llm_client, lock, pbar, max_retries, language, no_reference=False,
+                         save_justifications=False, judgments_path=None, mode="pairwise"):
     """Process a single task: get data, call LLM, parse results, calculate scores"""
     task_id = task_data.get('id')
     prompt = task_data.get('prompt')
@@ -67,10 +70,11 @@ def process_single_item(task_data, target_articles_map, reference_articles_map, 
         with lock: pbar.update(1)
         return {"id": task_id, "prompt": prompt, "error": "Target article not found"}
     
-    if prompt not in reference_articles_map:
-        logger.error(f"Reference article not found for ID {task_id}")
-        with lock: pbar.update(1)
-        return {"id": task_id, "prompt": prompt, "error": "Reference article not found"}
+    if not no_reference:
+        if prompt not in reference_articles_map:
+            logger.error(f"Reference article not found for ID {task_id}")
+            with lock: pbar.update(1)
+            return {"id": task_id, "prompt": prompt, "error": "Reference article not found"}
     
     if prompt not in criteria_map:
         logger.error(f"Evaluation criteria not found for ID {task_id}")
@@ -78,11 +82,11 @@ def process_single_item(task_data, target_articles_map, reference_articles_map, 
         return {"id": task_id, "prompt": prompt, "error": "Evaluation criteria not found"}
 
     target_article_data = target_articles_map[prompt]
-    reference_article_data = reference_articles_map[prompt]
+    reference_article_data = reference_articles_map[prompt] if not no_reference else None
     criteria_data = criteria_map[prompt]
 
     target_article = target_article_data.get('article', '')
-    reference_article = reference_article_data.get('article', '')
+    reference_article = reference_article_data.get('article', '') if reference_article_data else ''
 
     # Format evaluation criteria list in JSON
     try:
@@ -93,15 +97,23 @@ def process_single_item(task_data, target_articles_map, reference_articles_map, 
         return {"id": task_id, "prompt": prompt, "error": f"Failed to format criteria: {str(e)}"}
 
     # Choose scoring prompt based on language
-    merged_score_prompt = zh_merged_score_prompt if language == "zh" else en_merged_score_prompt
-    
-    # Prepare LLM prompt
-    user_prompt = merged_score_prompt.format(
-        task_prompt=prompt,
-        article_1=target_article,
-        article_2=reference_article,
-        criteria_list=criteria_list_str 
-    )
+    if no_reference:
+        merged_score_prompt = zh_point_wise_prompt if language == "zh" else en_point_wise_prompt
+        # Prepare LLM prompt (point-wise)
+        user_prompt = merged_score_prompt.format(
+            task_prompt=prompt,
+            article=target_article,
+            criteria_list=criteria_list_str 
+        )
+    else:
+        merged_score_prompt = zh_merged_score_prompt if language == "zh" else en_merged_score_prompt
+        # Prepare LLM prompt (pairwise)
+        user_prompt = merged_score_prompt.format(
+            task_prompt=prompt,
+            article_1=target_article,
+            article_2=reference_article,
+            criteria_list=criteria_list_str 
+        )
 
     llm_response_str = None
     llm_output_json = None
@@ -148,31 +160,61 @@ def process_single_item(task_data, target_articles_map, reference_articles_map, 
             "model_output": llm_response_str[:500] if llm_response_str else "No response"
         }
 
+    # Optionally persist judge justifications (per-criterion analyses and scores)
+    if save_justifications and judgments_path:
+        try:
+            judgment_record = {
+                "id": task_id,
+                "prompt": prompt,
+                "mode": mode,
+                "judge_details": llm_output_json
+            }
+            with lock:
+                with open(judgments_path, 'a', encoding='utf-8') as jf:
+                    jf.write(json.dumps(judgment_record, ensure_ascii=False) + '\n')
+        except Exception as e:
+            logger.warning(f"ID {task_id}: Failed to write judge justifications - {str(e)}")
+
     # Calculate weighted scores
     try:
         scores = calculate_weighted_scores(llm_output_json, criteria_data, language)
-        
-        # Calculate overall score = target / (target + reference)
-        target_total = scores["target"]["total"]
-        reference_total = scores["reference"]["total"]
-        overall_score = 0
-        if target_total + reference_total > 0:
-            overall_score = target_total / (target_total + reference_total)
-        
-        # Calculate normalized dimension scores
-        normalized_dims = {}
-        for dim in ["comprehensiveness", "insight", "instruction_following", "readability"]:
-            dim_key = f"{dim}_weighted_avg"
-            if dim_key in scores["target"]["dims"]:
-                target_score = scores["target"]["dims"][dim_key]
-                reference_score = scores["reference"]["dims"][dim_key]
-                if target_score + reference_score > 0:
-                    normalized_dims[dim] = target_score / (target_score + reference_score)
+
+        if no_reference:
+            # Normalize to 0-1 by dividing by 10 (max per-dimension score)
+            target_total = scores["target"]["total"]
+            overall_score = max(0.0, min(1.0, target_total / 10.0))
+
+            normalized_dims = {}
+            for dim in ["comprehensiveness", "insight", "instruction_following", "readability"]:
+                dim_key = f"{dim}_weighted_avg"
+                if dim_key in scores["target"]["dims"]:
+                    target_score = scores["target"]["dims"][dim_key]
+                    normalized_dims[dim] = max(0.0, min(1.0, target_score / 10.0))
                 else:
+                    logger.warning(f"ID {task_id}: Missing dimension {dim_key} in scores")
                     normalized_dims[dim] = 0
-            else:
-                logger.warning(f"ID {task_id}: Missing dimension {dim_key} in scores")
-                normalized_dims[dim] = 0
+        else:
+            # Calculate overall score = target / (target + reference)
+            target_total = scores["target"]["total"]
+            reference_total = scores["reference"]["total"]
+            overall_score = 0
+            if target_total + reference_total > 0:
+                overall_score = target_total / (target_total + reference_total)
+            
+            # Calculate normalized dimension scores
+            normalized_dims = {}
+            for dim in ["comprehensiveness", "insight", "instruction_following", "readability"]:
+                dim_key = f"{dim}_weighted_avg"
+                if dim_key in scores["target"]["dims"]:
+                    target_score = scores["target"]["dims"][dim_key]
+                    reference_score = scores["reference"]["dims"][dim_key]
+                    if target_score + reference_score > 0:
+                        normalized_dims[dim] = target_score / (target_score + reference_score)
+                    else:
+                        normalized_dims[dim] = 0
+                else:
+                    logger.warning(f"ID {task_id}: Missing dimension {dim_key} in scores")
+                    normalized_dims[dim] = 0
         
     except Exception as e:
         logger.error(f"ID {task_id}: Error calculating scores - {str(e)}")
@@ -200,7 +242,8 @@ def process_single_item(task_data, target_articles_map, reference_articles_map, 
     return final_result
 
 def process_language_data(language, target_model, llm_client, clean_agent, 
-                         raw_data_dir, cleaned_data_dir, max_workers, limit, query_file):
+                         raw_data_dir, cleaned_data_dir, max_workers, limit, query_file, no_reference=False,
+                         save_justifications=False, judgments_path=None, mode="pairwise"):
     """Process data for a single language (Chinese or English)"""
     
     # Step 1: Clean target model articles if needed
@@ -254,9 +297,11 @@ def process_language_data(language, target_model, llm_client, clean_agent,
             logger.error(f"No target articles found for model {target_model} in {language}")
             return None
             
-        # Load reference articles
-        all_reference_articles = load_jsonl(REFERENCE_FILE)
-        reference_articles_list = [a for a in all_reference_articles if a.get('prompt') in task_prompts]
+        # Load reference articles only if needed
+        reference_articles_list = []
+        if not no_reference:
+            all_reference_articles = load_jsonl(REFERENCE_FILE)
+            reference_articles_list = [a for a in all_reference_articles if a.get('prompt') in task_prompts]
             
         # Build mappings
         criteria_map = {item['prompt']: item for item in criteria_list}
@@ -270,14 +315,14 @@ def process_language_data(language, target_model, llm_client, clean_agent,
                 logger.warning(f"No criteria found for task prompt: {prompt[:50]}...")
             if prompt not in target_articles_map:
                 logger.warning(f"No target article found for task prompt: {prompt[:50]}...")
-            if prompt not in reference_articles_map:
+            if not no_reference and prompt not in reference_articles_map:
                 logger.warning(f"No reference article found for task prompt: {prompt[:50]}...")
                 
         # Filter out tasks with missing data
         tasks_to_process = [task for task in all_tasks 
                            if task.get('prompt') in criteria_map
                            and task.get('prompt') in target_articles_map
-                           and task.get('prompt') in reference_articles_map]
+                           and (no_reference or task.get('prompt') in reference_articles_map)]
         
         if not tasks_to_process:
             logger.error(f"No complete task data found for {language}")
@@ -306,7 +351,11 @@ def process_language_data(language, target_model, llm_client, clean_agent,
                     lock,
                     pbar,
                     MAX_RETRIES,
-                    language
+                    language,
+                    no_reference,
+                    save_justifications,
+                    judgments_path,
+                    mode
                 )
                 for task in tasks_to_process
             ]
@@ -331,6 +380,9 @@ def main():
     parser.add_argument('--only_zh', action='store_true', help='Only process Chinese data.')
     parser.add_argument('--only_en', action='store_true', help='Only process English data.')
     parser.add_argument('--force', action='store_true', help='Force re-evaluation even if results exist.')
+    parser.add_argument('--no_reference', action='store_true', help='Evaluate without a reference article (point-wise).')
+    parser.add_argument('--save_justifications', action='store_true', help='Persist per-criterion judge analyses to a JSONL file.')
+    parser.add_argument('--judgments_dir', type=str, default='results/judgments', help='Directory to store judge justification JSONL files.')
     
     # Add only the parameters that need to be configurable via command line
     parser.add_argument('--raw_data_dir', type=str, default="data/test_data/raw_data", help='Directory containing raw data.')
@@ -353,8 +405,24 @@ def main():
     max_workers = args.max_workers
     query_file = args.query_file
     output_dir = args.output_dir
+    no_reference = args.no_reference
+    save_justifications = args.save_justifications
+    judgments_dir = args.judgments_dir
+    mode = "no_reference" if no_reference else "pairwise"
     
     os.makedirs(output_dir, exist_ok=True)
+    if save_justifications:
+        os.makedirs(judgments_dir, exist_ok=True)
+        judgments_path = os.path.join(judgments_dir, f"{target_model}.jsonl")
+        # If forcing a fresh run, also reset the judgments file to avoid mixing runs
+        if force:
+            try:
+                with open(judgments_path, 'w', encoding='utf-8') as jf:
+                    jf.write("")
+            except IOError as e:
+                logger.warning(f"Failed to initialize judgments file {judgments_path}: {e}")
+    else:
+        judgments_path = None
     
     # check if the results file exists
     output_file = os.path.join(output_dir, "raw_results.jsonl")
@@ -423,7 +491,11 @@ def main():
                     logger.info(f"Processing up to {remaining_limit} more Chinese tasks (limit: {limit}, already processed: {existing_zh_count})")
                     zh_results = process_language_data(
                         "zh", target_model, llm_client, clean_agent,
-                        raw_data_dir, cleaned_data_dir, max_workers, remaining_limit, query_file
+                        raw_data_dir, cleaned_data_dir, max_workers, remaining_limit, query_file,
+                        no_reference,
+                        save_justifications,
+                        judgments_path,
+                        mode
                     )
                     if zh_results:
                         all_results.extend(zh_results)
@@ -433,7 +505,11 @@ def main():
                 # if limit is not specified, process all unprocessed tasks
                 zh_results = process_language_data( 
                     "zh", target_model, llm_client, clean_agent,
-                    raw_data_dir, cleaned_data_dir, max_workers, limit, query_file
+                    raw_data_dir, cleaned_data_dir, max_workers, limit, query_file,
+                    no_reference,
+                    save_justifications,
+                    judgments_path,
+                    mode
                 )
                 if zh_results:
                     all_results.extend(zh_results)
@@ -458,7 +534,11 @@ def main():
                     logger.info(f"Processing up to {remaining_limit} more English tasks (limit: {limit}, already processed: {existing_en_count})")
                     en_results = process_language_data(
                         "en", target_model, llm_client, clean_agent,
-                        raw_data_dir, cleaned_data_dir, max_workers, remaining_limit, query_file
+                        raw_data_dir, cleaned_data_dir, max_workers, remaining_limit, query_file,
+                        no_reference,
+                        save_justifications,
+                        judgments_path,
+                        mode
                     )
                     if en_results:
                         all_results.extend(en_results)
@@ -468,7 +548,11 @@ def main():
                 # if limit is not specified, process all unprocessed tasks
                 en_results = process_language_data(
                     "en", target_model, llm_client, clean_agent,
-                    raw_data_dir, cleaned_data_dir, max_workers, limit, query_file
+                    raw_data_dir, cleaned_data_dir, max_workers, limit, query_file,
+                    no_reference,
+                    save_justifications,
+                    judgments_path,
+                    mode
                 )
                 if en_results:
                     all_results.extend(en_results)

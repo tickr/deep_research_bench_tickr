@@ -3,19 +3,25 @@ import os
 import re
 import time
 from tqdm import tqdm
-from .api import AIClient
+try:
+    from utils.api import AIClient
+except Exception:
+    import sys
+    from pathlib import Path
+    sys.path.append(str(Path(__file__).resolve().parents[1]))
+    from utils.api import AIClient
 import concurrent.futures
 import threading
 
 # Import dimension weight generation prompts for Chinese and English
-from ..prompt.criteria_prompt_zh import (
+from prompt.criteria_prompt_zh import (
     generate_eval_dimension_weight_prompt as zh_weight_prompt,
     generate_eval_criteria_prompt_comp as zh_comp_prompt,
     generate_eval_criteria_prompt_insight as zh_insight_prompt,
     generate_eval_criteria_prompt_Inst as zh_inst_prompt,
     generate_eval_criteria_prompt_readability as zh_readability_prompt
 )
-from ..prompt.criteria_prompt_en import (
+from prompt.criteria_prompt_en import (
     generate_eval_dimension_weight_prompt as en_weight_prompt,
     generate_eval_criteria_prompt_comp as en_comp_prompt,
     generate_eval_criteria_prompt_insight as en_insight_prompt,

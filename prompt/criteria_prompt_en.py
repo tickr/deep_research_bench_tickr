@@ -4,6 +4,97 @@
 # 3. Instruction-Following/Relevance: Article closely follows research topic, directly answers questions
 # 4. Readability: Article has clear structure, fluent language, and is easy to understand
 
+# Shared schema/constraints context block to include in all judge prompts.
+_SCHEMA_AND_CONSTRAINTS_BLOCK = """
+<report_schema_outline>
+## Client And Service Information
+
+## Executive Summary
+### Ratings By LOB
+### Recommendation Summary
+- Critical
+- Important
+- Advisory
+### Key Contacts
+
+## Description Of Operations
+
+## Loss Analysis
+
+## Service Planning
+
+## PCO Survey Sections
+### Description Of Products Exposures
+- End Product And Intended Use
+- Key Customers
+- Stream Of Commerce
+- Process Flow
+- Sales Distribution
+- Additional Details
+### PCO Operations Considered
+- Conclusion Rating (1-4)
+- Comments
+### Loss Potential
+- Frequency
+- Severity
+- Scenarios
+- Comments
+### Design & Engineering
+- Rating (1-4)
+- Comments (labels, warnings, IFUs, legal review)
+### Production & Manufacturing
+- Rating (1-4)
+- Comments (suppliers, risk transfer, contracts, insurance)
+### Regulatory Management
+- Rating (1-4)
+- Comments (regulatory standards, inspections, compliance history)
+### Post-Market Surveillance & Recall
+- Rating (1-4)
+- Comments (CAPA, traceability, recall program, CRO interactions)
+### Industry Exposures & Controls
+- Rating (1-4)
+- Comments (emerging hazards, exposures)
+### Accident Investigations & Loss Analysis
+- Rating (1-4)
+- Comments (claims history, corrective actions, loss trends)
+
+## Disclaimer
+</report_schema_outline>
+
+<mandatory_elements>
+- Headings and order must match the outline exactly (use '##' for sections, '###' for subsections, exact casing).
+- Under 'Executive Summary' include 'Recommendation Summary' with Critical, Important, Advisory.
+- In 'PCO Survey Sections', each category requires a 1–4 rating with an evidence-backed rationale:
+  - Design & Engineering; Production & Manufacturing; Regulatory Management;
+    Post-Market Surveillance & Recall; Industry Exposures & Controls; Accident Investigations & Loss Analysis.
+- For every mentioned risk, explicitly identify the underlying drivers/causal factors (emerging risk drivers) and ensure recommendations address those drivers.
+- 'Loss Potential' must include Frequency, Severity, at least one Scenario, and Comments.
+- Append the standard Disclaimer text verbatim after '## Disclaimer'.
+</mandatory_elements>
+
+<grounding_and_provenance_rules>
+- All citations must be formatted as either bracketed named sources (e.g., [Data source (date)]) or a bracketed URL (e.g., [https://example.com]). Parenthetical URLs are non‑conforming and should be docked.
+- Apply the same rule to both Tickr-derived and web-derived evidence; do not output raw Tickr tokens in-text.
+- Key Contacts must be confirmed on official client-owned pages; otherwise output exactly:
+  "Unknown — client to provide key contacts (Quality/Regulatory/Operations/EHS)."
+</grounding_and_provenance_rules>
+
+<sufficient_insights_criteria>
+- ≥ 7 non-duplicative insights overall.
+- Coverage across Rules / Frameworks / Controls (at least 1–2 relevant items each).
+- Loss analysis includes a sector-relevant scenario with frequency/severity and provenance.
+</sufficient_insights_criteria>
+
+<standard_disclaimer_text>
+Risk Control evaluations, reports, and recommendations are for underwriting support only.
+</standard_disclaimer_text>
+
+<sector_guidance_expectations>
+- Explicitly reference at least one sector Rule (legal/regulatory) and one Framework (standard/program) where relevant.
+</sector_guidance_expectations>
+"""
+
+
 # Prompt to generate evaluation dimension weights
 generate_eval_dimension_weight_prompt = """
 <system_role>
@@ -16,6 +107,8 @@ There is a deep research task as follows:
 "{task_prompt}"
 </task>
 
+""" + _SCHEMA_AND_CONSTRAINTS_BLOCK + """
+
 <instruction>
 **Background**: The research team will conduct in-depth and comprehensive research based on the `<task>` above and ultimately produce a high-quality research article.
 **Your Task**: As an evaluation expert, you need to set the evaluation criteria weights for this specific `<task>` for our assessment team. The evaluation will be conducted across the following four dimensions:
@@ -26,10 +119,15 @@ There is a deep research task as follows:
 
 **Evaluation Formula**: Total Score = Comprehensiveness * Comprehensiveness Weight + Insight * Insight Weight + Instruction Following * Instruction Following Weight + Readability * Readability Weight. (**Note: The sum of all weights must be exactly 1.0**)
 
+**Schema & Grounding Awareness (Critical for this environment)**
+- Treat exact schema adherence and grounding/provenance compliance as first-class factors when allocating weights.
+- If the task stresses regulatory conformance or ratings-driven evaluation (e.g., PCO categories and Loss Potential), increase emphasis on Instruction Following and Insight.
+- If the task is breadth-heavy across multiple exposure areas, increase Comprehensiveness and Readability.
+
 **Core Requirements**:
 1.  **In-depth Task Analysis**: Carefully study the specific content of the `<task>`, its implicit goals, potential difficulties, and the core value of its outcomes.
 2.  **Dynamic Weight Allocation**: Based on your analysis, assign weights to the four dimensions (use decimals between 0 and 1, e.g., 0.3). **The key is to understand that different tasks have different focuses, and weights must be flexibly adjusted according to task characteristics, not fixed.**
-3.  **Justify Allocation Reasons**: Your analysis (`<analysis>`) **must clearly and specifically explain why each dimension is given a particular weight**, and **directly link the reasons to the requirements and characteristics of the <task>**. This is crucial for evaluating the quality of your work.
+3.  **Justify Allocation Reasons**: Your analysis (`<analysis>`) **must clearly and specifically explain why each dimension is given a particular weight**, and **directly link the reasons to the requirements and characteristics of the <task>**, the `<report_schema_outline>`, and the **mandatory elements** (ratings, scenarios, Recommendation Summary, Disclaimer). Explicitly consider **provenance rules** when justifying the Instruction Following weight.
 4.  **Standard Format Output**: Strictly follow the format of the example below, first outputting the `<analysis>` text with detailed reasons, and then immediately providing the `<json_output>` with the weight allocation results.
 
 </instruction>
@@ -40,15 +138,15 @@ The following two examples are provided to demonstrate **how to adjust evaluatio
 
 <example_1>
 <task>
-"Analyze the feasibility of investing in electric vehicle (EV) charging infrastructure in suburban areas."
+"Evaluate Design & Engineering and Post‑Market Surveillance readiness for a Class II medical device manufacturer to support underwriting risk rating and recommendations."
 </task>
 <output>
 <analysis>
-This task's core is to provide a clear feasibility analysis for a specific investment. The value lies in the thoroughness of the assessment and the practicality of its conclusions. Therefore, evaluation emphasizes insight and comprehensiveness.
-* **Insight (0.35):** The task requires a deep analysis of feasibility, including market demand, costs, competition, and regulatory landscape. The quality of the strategic recommendations derived from this analysis is key.
-* **Comprehensiveness (0.30):** A thorough investigation of all relevant factors (technical, economic, social, environmental) is crucial for a reliable feasibility study.
-* **Instruction Following (0.20):** The report must specifically address EV charging infrastructure in suburban areas and focus on investment feasibility.
-* **Readability (0.15):** Clearly communicating complex financial and technical analysis is important, but secondary to the depth and breadth of the study.
+This task's core is to determine underwriting-relevant risk posture by assessing control effectiveness in high-impact categories. The value lies in the depth of causal analysis (why controls are weak/strong), linkage to sector Rules/Frameworks, and actionable recommendations tied to drivers of emerging risk. Therefore, evaluation emphasizes insight and comprehensiveness.
+* **Insight (0.35):** Requires deep analysis of design control robustness (labels/warnings/IFUs/legal review) and post‑market systems (CAPA, traceability, recall program), identifying causal drivers and implications for risk.
+* **Comprehensiveness (0.30):** Must cover schema-required categories, ratings, and loss pathways to provide a complete underwriting view.
+* **Instruction Following (0.20):** Must adhere to the schema (1–4 ratings with rationales, Recommendation Summary, Disclaimer) and provenance rules.
+* **Readability (0.15):** Clear rationales and scannable recommendations aid decision-making, but are secondary to analytical depth and coverage.
 </analysis>
 <json_output>
 {{
@@ -63,15 +161,15 @@ This task's core is to provide a clear feasibility analysis for a specific inves
 
 <example_2>
 <task>
-"Provide a comprehensive overview of the historical performance of different renewable energy stocks over the past decade."
+"Produce a comprehensive PCO Liability Survey Report for an industrial equipment manufacturer, covering all required sections, ratings, and loss potential to support underwriting."
 </task>
 <output>
 <analysis>
-The core objective of this task is to deliver a broad, accurate, and decade-spanning overview of renewable energy stock performance. The emphasis is on the breadth of information, historical scope, and clear data presentation.
-* **Comprehensiveness (0.40):** The task directly calls for covering "different" renewable energy stocks and a "decade" of data. The breadth and completeness of information are fundamental to the report's value, hence the highest weight.
-* **Readability (0.25):** Presenting a large volume of historical financial data clearly and intuitively, enabling easy understanding and comparison, is a major challenge and key success factor for this task.
-* **Instruction Following (0.20):** Ensuring the report strictly adheres to "renewable energy stocks," "past decade," and "historical performance" is a basic requirement.
-* **Insight (0.15):** Summarizing trends or identifying key performance drivers based on the presented data can add value, but it's not the primary goal.
+The core objective is to deliver a broad, accurate, schema-complete underwriting support report. The emphasis is on breadth of coverage across PCO sections, correctness of ratings and required subsections, and clear presentation of key information for scanning.
+* **Comprehensiveness (0.40):** Must cover all PCO sections, ratings, and loss inputs (frequency/severity/scenarios) with adequate breadth and completeness.
+* **Readability (0.25):** Presenting a large amount of structured risk information clearly and intuitively is key for reviewers.
+* **Instruction Following (0.20):** Strict adherence to schema headings/order, Recommendation Summary, Disclaimer, and provenance formatting is a basic requirement.
+* **Insight (0.15):** Some synthesis and prioritization add value, but the primary aim is coverage and clarity.
 </analysis>
 <json_output>
 {{
@@ -92,6 +190,7 @@ Please output your `<analysis>` and `<json_output>`.
 </user_prompt>
 """
 
+
 # Comprehensiveness
 generate_eval_criteria_prompt_comp = """
 <system_role>
@@ -109,6 +208,8 @@ You are an experienced research article evaluation expert. You excel at breaking
 "{task_prompt}"
 </task>
 
+""" + _SCHEMA_AND_CONSTRAINTS_BLOCK + """
+
 <instruction>
 **Your Goal**: For the **Comprehensiveness** dimension of this research article, develop a set of detailed, specific, and highly task-relevant evaluation criteria. You need to:
 1.  **Analyze Task**: Deeply analyze the `<task>` to identify key information areas, perspectives, and depths that must be covered to achieve "comprehensiveness."
@@ -117,12 +218,15 @@ You are an experienced research article evaluation expert. You excel at breaking
 4.  **Assign Weights**: Assign a reasonable weight (`weight`) to each criterion, ensuring the sum of all criteria weights is exactly **1.0**. Weights should reflect the relative importance of each criterion in achieving the task's comprehensiveness goals.
 5.  **Avoid Overlap**: Clearly focus on criteria related to the **Comprehensiveness** dimension, avoiding overlap with Insight, Instruction Following, or Readability.
 
+6.  **Evidence Diversity & Argument Variety**: Include a distinct criterion that evaluates the diversity and independence of cited sources and the variety of perspectives/arguments presented, judged only from in-article citations and content. Accept only `[Data source (date)]` and bracketed URL `[https://…]`; explicitly dock parenthetical URLs `(https://…)` and any other non-conforming formats. Reward articles that explicitly weigh multiple considerations/perspectives.
+
 **Core Requirements**:
 1.  **Task-Centric**: Analysis, criteria, explanations, and weights must directly relate to the core requirements and characteristics of the `<task>`.
-2.  **Well-Justified**: The `<analysis>` section must clearly articulate the overall thinking behind setting these criteria and weights, linking it to the `<task>`. The `explanation` for each criterion must justify its specific relevance.
+2.  **Well-Justified**: The `<analysis>` section must clearly articulate the overall thinking behind setting these criteria and weights, linking it to the `<task>`, the `<report_schema_outline>`, and **mandatory elements** (ratings, scenarios, Recommendation Summary, Disclaimer).
 3.  **Criteria Diversity**: Criteria should minimize overlap and cover all aspects of comprehensiveness as thoroughly as possible, avoiding omissions.
 4.  **Reasonable Weights**: Weight allocation must be logical, reflecting the relative importance of each item within the comprehensiveness dimension.
 5.  **Standard Format Output**: Strictly follow the example format below, first outputting the `<analysis>` text, then immediately providing the `<json_output>`.
+6.  **Source Diversity Focus**: Explicitly assess the diversity and independence of sources and arguments based on in-article citations and perspectives; do not assess off-article veracity. Accept only `[Data source (date)]` and bracketed URL `[https://…]`; explicitly dock parenthetical URLs `(https://…)` and any other non-conforming formats. Reward clear presentation of multiple considerations/trade-offs.
 </instruction>
 
 <example_rational>
@@ -131,54 +235,54 @@ The following example demonstrates **how to formulate comprehensiveness criteria
 
 <example>
 <task>
-"Analyze the impact of remote work trends on commercial real estate in major US cities and recommend investment strategies."
+"Assess PCO exposures and controls for a consumer electronics manufacturer and recommend risk control actions to support underwriting ratings."
 </task>
 
 <output>
 <analysis>
-To comprehensively evaluate a research article on "the impact of remote work on commercial real estate in major US cities and recommended investment strategies," considerations must span multiple dimensions. This task has a dual objective: first, to analyze the market impact, and second, to propose actionable investment strategies based on this analysis. Therefore, a comprehensive assessment must ensure the article covers key drivers of change in commercial real estate due to remote work, and thoroughly examines various investment approaches.
+To comprehensively evaluate a PCO Liability Survey Report for underwriting, considerations must span all schema-required sections and ensure complete coverage of exposures, controls, ratings, and loss inputs. The task has a dual objective: first, to analyze exposures and control effectiveness across PCO sections; second, to recommend actionable risk control actions and service planning tied to emerging risk drivers. Therefore, a comprehensive assessment must ensure the article covers required sections, provides ratings with rationales, integrates Rules/Frameworks/Controls, and details loss potential.
 
 Specifically, evaluation criteria need to cover:
-1.  **Remote Work Trends & Adoption Data**: Coverage of current and projected remote/hybrid work models, adoption rates across industries and demographics.
-2.  **Impact on Commercial Real Estate Sectors**: Analysis of effects on office, retail, and industrial spaces, including vacancy rates, leasing trends, and property valuations in major US cities.
-3.  **Geographical Variations**: Examination of how impacts differ across various major US cities (e.g., tech hubs vs. financial centers, downtown vs. suburban).
-4.  **Economic and Social Implications**: Discussion of broader economic effects (e.g., urban development, local businesses) and social shifts.
-5.  **Investment Strategy Analysis**: Evaluation of different investment strategies (e.g., repurposing properties, investing in niche CRE sectors, focusing on specific geographies) with risk/return profiles.
-6.  **Data Sources and Methodology**: Consideration of the range and quality of data sources used (e.g., market reports, surveys, economic data) and the soundness of analytical methods.
+1.  **Coverage of Required Schema Sections**: All primary and subsection headings are present and populated, including Recommendation Summary and Disclaimer.
+2.  **Ratings and Rationales Across PCO Categories**: Each required category has a 1–4 rating with an evidence-backed rationale.
+3.  **Loss Potential Inputs**: Frequency, Severity, and at least one realistic Scenario with comments and provenance.
+4.  **Integration of Rules/Frameworks/Controls**: Use of sector Rules and Frameworks to ground control evaluations and recommendations.
+5.  **Diversity of Data Sources and Arguments**: Uses multiple independent sources and presents distinct perspectives; inline citations must be `[Data source (date)]` or bracketed URL `[https://…]`; parenthetical URLs are docked; avoids over-reliance on a single source.
+6.  **Client/Service Information and Key Contacts**: Policy-compliant handling, including "Unknown" where evidence is absent.
 
-Weight allocation should be balanced between the impact analysis (remote work trends, sector impacts, geographical variations) and the investment strategy section, as both are critical to fulfilling the task. Within impact analysis, specific sector impacts and geographical variations are key to actionable insights.
+Weight allocation should be balanced between coverage of PCO sections and the completeness of ratings/loss inputs, as both are critical to underwriting usefulness. Integration of Rules/Frameworks/Controls and evidence breadth are key to defensible conclusions.
 </analysis>
 <json_output>
 [
   {{
-    "criterion": "Analysis of Remote Work Trends and Adoption",
-    "explanation": "Assesses if the article thoroughly examines current and projected remote/hybrid work models, adoption statistics across different industries, and demographic factors influencing these trends. This forms the basis of the impact analysis.",
+    "criterion": "Coverage of All Primary Sections and Subsections per Schema",
+    "explanation": "All '##' and '###' headings present and populated, including 'Recommendation Summary' and 'Disclaimer'.",
+    "weight": 0.18
+  }},
+  {{
+    "criterion": "Complete Ratings and Rationales in PCO Survey Sections",
+    "explanation": "Each category has a 1–4 rating with an evidence-backed rationale.",
+    "weight": 0.22
+  }},
+  {{
+    "criterion": "Loss Potential Depth",
+    "explanation": "Includes Frequency, Severity, at least one Scenario with comments and provenance.",
     "weight": 0.15
   }},
   {{
-    "criterion": "Comprehensive Coverage of CRE Sector Impacts",
-    "explanation": "Evaluates if the article details the impact on various commercial real estate (CRE) sectors (office, retail, industrial, etc.), including data on vacancy rates, rental trends, and property valuations in major US cities.",
+    "criterion": "Integration of Rules / Frameworks / Controls",
+    "explanation": "Explicitly names at least one sector Rule and one Framework where relevant.",
+    "weight": 0.15
+  }},
+  {{
+    "criterion": "Diversity of Sources and Arguments",
+    "explanation": "Multiple independent sources cited in-line across varied domains/types; presents differing perspectives and explicitly weighs multiple considerations/trade-offs; avoids single-source dependence; citations must be [Data source (date)] or bracketed URL [https://…]; parenthetical URLs are docked.",
     "weight": 0.20
   }},
   {{
-    "criterion": "Examination of Geographical Variations and Nuances",
-    "explanation": "Checks if the article analyzes how the impact of remote work on CRE differs across various major US cities, considering their unique economic structures and demographic profiles.",
-    "weight": 0.15
-  }},
-  {{
-    "criterion": "Discussion of Broader Economic and Social Consequences",
-    "explanation": "Assesses coverage of wider implications, such as effects on urban planning, transportation, local economies dependent on office workers, and ancillary businesses.",
+    "criterion": "Key Contacts and Client/Service Information",
+    "explanation": "Attempts to populate policy-driven items; declares 'Unknown' with needed evidence when applicable.",
     "weight": 0.10
-  }},
-  {{
-    "criterion": "Thorough Evaluation of Investment Strategies",
-    "explanation": "Evaluates if the article comprehensively explores and assesses various investment strategies in response to the identified trends, including potential risks, returns, and suitability for different investor profiles.",
-    "weight": 0.25
-  }},
-  {{
-    "criterion": "Breadth and Quality of Data Sources and Methodologies",
-    "explanation": "Assesses if the article utilizes a wide range of credible data sources (e.g., market research, economic reports, academic studies) and employs sound analytical methodologies to support its findings and recommendations.",
-    "weight": 0.15
   }}
 ]
 </json_output>
@@ -192,6 +296,7 @@ Please strictly follow the above instructions and methods. Now, begin your work 
 Please output your `<analysis>` and `<json_output>`.
 </user_prompt>
 """
+
 
 # Insight / Depth
 generate_eval_criteria_prompt_insight = """
@@ -210,6 +315,8 @@ You are an experienced research article evaluation expert. You excel at breaking
 "{task_prompt}"
 </task>
 
+""" + _SCHEMA_AND_CONSTRAINTS_BLOCK + """
+
 <instruction>
 **Your Goal**: For the **Insight** dimension of this research article, develop a set of detailed, specific, and highly task-relevant evaluation criteria. You need to:
 1.  **Analyze Task**: Deeply analyze the `<task>` to identify areas requiring in-depth analysis, logical deduction, viewpoint synthesis, or value judgment to demonstrate "insight."
@@ -221,9 +328,10 @@ You are an experienced research article evaluation expert. You excel at breaking
 **Core Requirements**:
 1.  **Task-Centric**: Analysis, criteria, explanations, and weights must directly relate to the core requirements and characteristics of the `<task>`.
 2.  **Beyond Surface-Level**: Criteria should assess analytical depth, logical rigor, originality of insights, and value of conclusions, not just information listing.
-3.  **Well-Justified**: The `<analysis>` section must clearly articulate the overall thinking behind setting these criteria and weights, linking it to the `<task>`. The `explanation` for each criterion must justify its specific relevance.
-4.  **Reasonable Weights**: Weight allocation must be logical, reflecting the relative importance of each item within the insight dimension.
-5.  **Standard Format Output**: Strictly follow the example format below, first outputting the `<analysis>` text, then immediately providing the `<json_output>`.
+3.  **Overall Report Depth**: Explicitly evaluate the overall analytical depth across critical schema sections (e.g., PCO Survey Sections, Loss Potential), not just isolated paragraphs.
+4.  **Well-Justified**: The `<analysis>` section must clearly articulate the overall thinking behind setting these criteria and weights, linking it to the `<task>`, the ratings and their rationales in the `<report_schema_outline>`, and the sector Rules/Frameworks/Controls.
+5.  **Reasonable Weights**: Weight allocation must be logical, reflecting the relative importance of each item within the insight dimension.
+6.  **Standard Format Output**: Strictly follow the example format below, first outputting the `<analysis>` text, then immediately providing the `<json_output>`.
 </instruction>
 
 <example_rational>
@@ -232,53 +340,58 @@ The following example demonstrates **how to formulate insight criteria based on 
 
 <example>
 <task>
-"Analyze the impact of remote work trends on commercial real estate in major US cities and recommend investment strategies."
+"Evaluate a pharmaceutical packaging supplier’s risk controls, justify 1–4 ratings across PCO categories, and provide loss scenarios and mitigation aligned to emerging risk drivers."
 </task>
 
 <output>
 <analysis>
-To evaluate the insight of a report on "the impact of remote work on commercial real estate (CRE) in major US cities and recommended investment strategies," the focus must be on the depth of analysis, logical strength, and the value of its conclusions, moving beyond simple data presentation. The task's core involves analyzing complex market shifts and providing strategic investment advice. Thus, insight is demonstrated by identifying key drivers of change, establishing rigorous analytical frameworks, performing multi-faceted risk/reward assessments for investment strategies, and offering forward-looking, actionable recommendations.
+To evaluate the insight of a PCO Liability Survey Report, focus on analytical depth, logical strength, and the underwriting value of conclusions. The core involves analyzing product liability risk drivers, evaluating control effectiveness against sector Rules/Frameworks, constructing realistic loss pathways, and providing forward-looking, actionable recommendations tied to drivers.
 
 Evaluation criteria should emphasize:
-1.  **Identification and Analysis of Core Drivers**: Not just listing factors, but deeply analyzing their mechanisms and relative importance in reshaping CRE markets.
-2.  **Sophistication of Impact Analysis**: Assessing whether the analysis uncovers non-obvious impacts or second-order effects of remote work on different CRE segments.
-3.  **Logical Rigor of Investment Recommendations**: Evaluating if investment strategies are well-reasoned, clearly linked to the impact analysis, and consider potential future scenarios.
-4.  **Depth of Risk-Return Assessment**: Examining if the report provides a nuanced understanding of the risks and potential returns associated with each recommended strategy, rather than superficial assessments.
-5.  **Originality and Strategic Value of Insights**: Whether the report offers unique perspectives, challenges conventional wisdom, or provides genuinely valuable strategic guidance that goes beyond common knowledge.
-6.  **Future Outlook and Adaptability**: Assessing if the report considers the long-term evolution of remote work and its implications, and if investment strategies are adaptable to changing conditions.
+1.  **Identification and Analysis of Core Risk Drivers**: Deeply analyze mechanisms and relative importance of drivers (e.g., labeling adequacy, supplier qualification, CAPA maturity) altering exposure.
+2.  **Sophistication in Uncovering Impacts**: Move beyond obvious findings to reveal second-order effects and cross-category interactions (e.g., design changes affecting recall traceability).
+3.  **Logical Rigor of Recommendations**: Ensure recommendations are derived from evidence, linked to drivers, and consider implementation constraints and sequencing (Immediate/90d/6–12m).
+4.  **Nuance in Risk Pathway Construction**: Provide realistic scenarios with clear precursors, failure modes, and expected frequency/severity.
+5.  **Originality and Strategic Value**: Offer perspectives or control patterns that materially improve risk posture beyond boilerplate guidance.
+6.  **Future Outlook and Adaptability**: Consider evolving regulations/standards and how controls should adapt.
 
-Weight allocation should favor the depth of impact analysis and the strategic value of investment recommendations, as these are central to demonstrating insight. The ability to identify core drivers and provide a nuanced risk-return assessment are also highly important.
+Weight allocation should favor depth of driver analysis, rigorous recommendations linked to drivers, and high-quality scenario construction, as these most strongly evidence insight for underwriting decisions.
 </analysis>
 <json_output>
 [
   {{
-    "criterion": "Depth of Analysis of Core Drivers and Mechanisms",
-    "explanation": "Assesses if the article not only identifies key drivers (e.g., technology, corporate policy, employee preference) of remote work's impact on CRE, but deeply analyzes their interplay and causal mechanisms, rather than a superficial listing.",
+    "criterion": "Causal Rationale Behind 1–4 Ratings",
+    "explanation": "Depth and specificity of why each category received its rating, grounded by evidence.",
     "weight": 0.20
   }},
   {{
-    "criterion": "Sophistication in Uncovering CRE Market Impacts",
-    "explanation": "Evaluates if the analysis goes beyond obvious impacts to uncover subtle or second-order effects on CRE demand, valuation, and use in different sectors (office, retail, etc.) and geographies.",
-    "weight": 0.20
+    "criterion": "Linkage to Rules / Frameworks / Controls",
+    "explanation": "Ratings and recommendations clearly tie to sector Rules/Frameworks and practical Controls.",
+    "weight": 0.16
   }},
   {{
-    "criterion": "Logical Coherence and Justification of Investment Strategies",
-    "explanation": "Assesses if the recommended investment strategies are logically derived from the impact analysis, are well-justified with supporting evidence, and consider potential market dynamics.",
-    "weight": 0.20
+    "criterion": "Scenario Quality and Risk Pathways",
+    "explanation": "Loss scenarios reflect realistic pathways, second-order effects, and sector nuances.",
+    "weight": 0.16
   }},
   {{
-    "criterion": "Nuance in Risk-Return Analysis for Investments",
-    "explanation": "Evaluates the depth of the risk-return assessment for proposed strategies, considering factors like market volatility, liquidity, holding periods, and specific risks associated with CRE in a post-remote work era.",
+    "criterion": "Actionability of Recommendations",
+    "explanation": "Recommendations are concrete, time-phased (Immediate/90d/6–12m where applicable), and risk-reducing.",
     "weight": 0.15
   }},
   {{
-    "criterion": "Originality and Strategic Value of Recommendations",
-    "explanation": "Assesses whether the article offers novel, actionable insights or investment strategies that provide a distinct advantage or perspective, moving beyond generic advice.",
-    "weight": 0.15
+    "criterion": "Handling of Uncertainty and Evidence Gaps",
+    "explanation": "Clearly marks unknowns and specifies required evidence; avoids speculation.",
+    "weight": 0.10
   }},
   {{
-    "criterion": "Forward-Looking Perspective and Consideration of Long-Term Trends",
-    "explanation": "Evaluates if the article incorporates a forward-looking view, anticipating future shifts in remote work and their sustained impact on CRE, and how investment strategies might adapt.",
+    "criterion": "Emerging Risk Driver Identification and Alignment",
+    "explanation": "Explicitly identifies underlying drivers behind each mentioned risk and shows how recommendations mitigate those drivers.",
+    "weight": 0.13
+  }},
+  {{
+    "criterion": "Overall Analytical Depth Across Critical Sections",
+    "explanation": "Evaluates the depth, layering of reasoning, and evidence density across sections most material to risk judgment (e.g., PCO Survey Sections, Loss Potential).",
     "weight": 0.10
   }}
 ]
@@ -293,6 +406,7 @@ Please strictly follow the above instructions and methods. Now, begin your work 
 Please output your `<analysis>` and `<json_output>`.
 </user_prompt>
 """
+
 
 # Instruction-Following / Relevance
 generate_eval_criteria_prompt_Inst = """
@@ -311,6 +425,8 @@ You are an experienced research article evaluation expert. You excel at breaking
 "{task_prompt}"
 </task>
 
+""" + _SCHEMA_AND_CONSTRAINTS_BLOCK + """
+
 <instruction>
 **Your Goal**: For the **Instruction Following** dimension of this research article, develop a set of detailed, specific, and highly task-relevant evaluation criteria. You need to:
 1.  **Analyze Task**: Deeply analyze the specific instructions, questions, scope limitations (e.g., geography, time, subject), and core objectives within the `<task>`.
@@ -322,7 +438,7 @@ You are an experienced research article evaluation expert. You excel at breaking
 **Core Requirements**:
 1.  **Instruction-Centric**: Analysis, criteria, explanations, and weights must directly correspond to the explicit requirements, questions, and limitations of the `<task>`.
 2.  **Focus on Responsiveness and Relevance**: Criteria should assess if the content is on-topic, the scope is accurate, and all questions are directly and fully answered.
-3.  **Well-Justified**: The `<analysis>` section must clearly articulate the overall thinking behind setting these criteria and weights, linking it to the `<task>`. The `explanation` for each criterion must justify its specific relevance.
+3.  **Well-Justified**: The `<analysis>` section must clearly articulate the overall thinking behind setting these criteria and weights, linking it to the `<task>`, the `<report_schema_outline>`, and the **mandatory elements**.
 4.  **Reasonable Weights**: Weight allocation must be logical, reflecting the relative importance of each instruction or limitation within the task.
 5.  **Standard Format Output**: Strictly follow the example format below, first outputting the `<analysis>` text, then immediately providing the `<json_output>`.
 </instruction>
@@ -333,47 +449,57 @@ The following example demonstrates **how to formulate instruction following crit
 
 <example>
 <task>
-"Analyze the impact of remote work trends on commercial real estate in major US cities and recommend investment strategies."
+"Assess PCO exposures and controls for a mid-sized contract manufacturer and provide 1–4 ratings, loss potential, and a time-phased service plan to support underwriting."
 </task>
 
 <output>
 <analysis>
-Evaluating the instruction-following capability for the task "Analyze the impact of remote work trends on commercial real estate in major US cities and recommend investment strategies" centers on whether the report precisely addresses all core components and constraints. The task has two primary components: 1) analyzing the impact of remote work on CRE, and 2) recommending investment strategies. Key constraints include focusing on "commercial real estate" and "major US cities."
+Evaluating instruction-following centers on whether the report precisely addresses all schema-mandated components and constraints. The task has core components: 1) analyze PCO exposures and controls; 2) provide 1–4 ratings with rationales; 3) present Loss Potential (frequency/severity/scenario); and 4) deliver a time-phased Service Planning section and Recommendation Summary. Constraints include exact headings/order, required subsections, and provenance formatting.
 
 Therefore, evaluation criteria must focus on:
-1.  **Response to Impact Analysis**: Does the report directly and clearly analyze the impact of remote work on CRE?
-2.  **Response to Investment Strategy Recommendation**: Does the report directly and clearly provide investment strategy recommendations based on the analysis?
-3.  **Adherence to Scope (CRE)**: Is the content strictly focused on commercial real estate, not residential or other property types?
-4.  **Adherence to Scope (Major US Cities)**: Is the analysis centered on major US cities as specified, avoiding irrelevant geographical focus?
-5.  **Completeness of Task Components**: Does the report address both the impact analysis and the investment recommendations, without omitting a key part of the request?
+1.  **Response to PCO Exposure/Control Analysis**: Does the report directly and clearly analyze exposures and control effectiveness across required categories?
+2.  **Response to Ratings and Service Plan**: Does the report provide 1–4 ratings with rationales and a time-phased plan (Immediate/90d/6–12m) aligned to drivers?
+3.  **Adherence to Schema Scope**: Is content strictly aligned to required sections and subsections (including Recommendation Summary and Disclaimer)?
+4.  **Provenance Compliance**: Are Tickr tokens and web URLs formatted inline per rules?
+5.  **Completeness of Task Components**: Are all schema components populated without omissions?
 
-Weight allocation should prioritize direct responses to the two main task components (impact analysis and strategy recommendations), as these are fundamental objectives. Adherence to scope (CRE and major US cities) is also crucial for relevance. Ensuring both components are covered addresses the completeness of the response.
+Weight allocation should prioritize direct responses to the analysis and ratings/service plan components, followed by strict schema and provenance adherence, since these determine evaluability for underwriting.
 </analysis>
 <json_output>
 [
   {{
-    "criterion": "Directness and Clarity of Impact Analysis on CRE",
-    "explanation": "Assesses if the article directly and clearly analyzes the impact of remote work trends specifically on commercial real estate, fulfilling the first core component of the task.",
-    "weight": 0.30
+    "criterion": "Exact Schema Headings and Order",
+    "explanation": "All required '##'/'###' headings present with exact casing and sequence.",
+    "weight": 0.20
   }},
   {{
-    "criterion": "Directness and Clarity of Investment Strategy Recommendations",
-    "explanation": "Assesses if the article directly and clearly presents investment strategies for CRE, based on the preceding impact analysis, fulfilling the second core component.",
-    "weight": 0.30
-  }},
-  {{
-    "criterion": "Strict Adherence to 'Commercial Real Estate' Focus",
-    "explanation": "Evaluates if the analysis and recommendations are consistently focused on commercial real estate, avoiding significant deviation into other property types (e.g., residential).",
+    "criterion": "Mandatory Subsections Present",
+    "explanation": "Includes 'Recommendation Summary' (Critical/Important/Advisory) and 'Disclaimer' text verbatim.",
     "weight": 0.15
   }},
   {{
-    "criterion": "Strict Adherence to 'Major US Cities' Geographical Scope",
-    "explanation": "Evaluates if the analysis and examples are predominantly centered on major US cities, as per the task's geographical constraint, without excessive focus on other regions or general global trends.",
-    "weight": 0.15
+    "criterion": "Ratings Presence and Validity",
+    "explanation": "All PCO categories have a single 1–4 rating and rationale.",
+    "weight": 0.17
   }},
   {{
-    "criterion": "Complete Coverage of All Task Components",
-    "explanation": "Ensures the article addresses both main aspects of the task – analyzing impacts and recommending strategies – without significant omissions of either component.",
+    "criterion": "Provenance Formatting Compliance",
+    "explanation": "Citations use [Data source (date)] or bracketed URL [https://…]; parentheses are non-conforming; no raw Tickr tokens in-text.",
+    "weight": 0.20
+  }},
+  {{
+    "criterion": "Sufficient Insights Criteria Satisfied",
+    "explanation": "Meets breadth and distribution requirements for the active mode (Tickr+Web/Web-only/Tickr-only).",
+    "weight": 0.10
+  }},
+  {{
+    "criterion": "Key Contacts Policy Compliance",
+    "explanation": "Follows strict policy for confirming or marking 'Unknown' with required evidence.",
+    "weight": 0.08
+  }},
+  {{
+    "criterion": "Emerging Risk Driver Alignment",
+    "explanation": "Each mentioned risk explicitly states the underlying drivers/causal factors and shows that recommendations target those drivers.",
     "weight": 0.10
   }}
 ]
@@ -388,6 +514,7 @@ Please strictly follow the above instructions and methods. Now, begin your work 
 Please output your `<analysis>` and `<json_output>`.
 </user_prompt>
 """
+
 
 # Readability - Generates general criteria and typical weights
 generate_eval_criteria_prompt_readability = """
@@ -406,6 +533,8 @@ You are an experienced research article evaluation expert. You excel at breaking
 "{task_prompt}"
 </task>
 
+""" + _SCHEMA_AND_CONSTRAINTS_BLOCK + """
+
 <instruction>
 **Your Goal**: For the **Readability** dimension of this research article, develop a set of detailed, specific, and relatively general evaluation criteria, while also considering the characteristics of the `<task>`. You need to:
 1.  **Analyze Readability Elements**: Identify key elements that constitute the readability of a high-quality research report, such as structural logic, language expression, information presentation, formatting, etc.
@@ -413,7 +542,7 @@ You are an experienced research article evaluation expert. You excel at breaking
     *   Language clarity and correctness (sentences, terminology, wording, errors)
     *   Content structure and logic (headings, paragraphs, introduction/conclusion, transitions)
     *   Information presentation and density (key points, breakdown, organization, redundancy)
-    *   Data and visualization (data accuracy/clarity, use of charts/tables)
+    *   Data and citation presentation (data accuracy/clarity, inline provenance placement)
     *   Formatting and layout (paragraphs, spacing, highlighting)
     *   Audience adaptation (term explanation, expression style)
 3.  **Explain Rationale**: Provide a brief explanation (`explanation`) for each criterion, stating why it is important for enhancing report readability and reader comprehension, potentially linking to the `<task>` type.
@@ -434,63 +563,53 @@ The following example demonstrates **how to formulate readability criteria**. Fo
 
 <example>
 <task>
-"Analyze the impact of remote work trends on commercial real estate in major US cities and recommend investment strategies."
+"Assess the impact of supplier quality variability and evolving regulatory expectations on PCO risk for a medical device assembler and recommend risk control actions to support underwriting."
 </task>
 
 <output>
 <analysis>
-Evaluating the readability of a report on "the impact of remote work on commercial real estate (CRE) in major US cities and recommended investment strategies" requires ensuring that complex market analysis and investment comparisons are easily understood by the reader. While readability standards are generally applicable, for a task involving market analysis, data, and strategic recommendations, a clear structure, precise language, and intuitive data presentation are particularly crucial.
+Evaluating the readability of a risk control report requires ensuring that complex exposure analyses, control evaluations, and scenarios are easy to follow. For underwriting support, a clear structure mirroring the schema, precise professional language, and intuitive presentation of data and citations are particularly crucial.
 
 Evaluation criteria should cover:
 1.  **Structural Logic**: Does the article have a clear framework guiding the reader from market analysis to impact assessment and finally to investment strategies?
 2.  **Language and Terminology**: Is the language fluent and accurate? Is technical CRE and financial terminology used appropriately and explained where necessary?
 3.  **Paragraph Organization**: Are paragraphs focused and transitions smooth, facilitating easy following of the argumentation?
-4.  **Information Presentation**: Is key information highlighted? Is data presented clearly, with appropriate use of charts and tables to illustrate trends and comparisons?
+4.  **Information Presentation**: Is key information highlighted? Is data presented clearly, with inline citations placed to preserve reading flow?
 5.  **Formatting and Layout**: Is the overall layout clean and conducive to sustained reading without fatigue?
 
-Weight allocation should give the highest importance to structural clarity, as it's fundamental to understanding complex analyses. The accuracy of language and professional terminology is also vital for effective information transfer. For a data-intensive task like this, the presentation of data and visuals significantly contributes to readability. Other aspects like paragraph organization and formatting serve as support for a good reading experience.
+Weight allocation should give the highest importance to structural clarity, as it's fundamental to understanding complex analyses. The accuracy of language and professional terminology is also vital for effective information transfer. For a data-intensive task like this, the presentation of data and citations significantly contributes to readability. Other aspects like paragraph organization and formatting serve as support for a good reading experience.
 </analysis>
 <json_output>
 [
   {{
-    "criterion": "Overall Article Structure and Logical Flow",
-    "explanation": "Assesses if the article has a clear logical structure (e.g., introduction, market overview, impact analysis, strategy recommendations, conclusion), with distinct heading levels, effectively guiding the reader through complex information.",
+    "criterion": "Structure Mirrors Schema and Guides Flow",
+    "explanation": "Headings and transitions help navigate Operations → Regulatory → Loss → Recommendations; mirrors exact schema.",
     "weight": 0.25
   }},
   {{
-    "criterion": "Clarity, Precision, and Professionalism of Language",
-    "explanation": "Evaluates if the language is fluent, grammatically correct, free of jargon where possible, and uses precise terminology; technical terms (e.g., cap rate, NOI, Class A/B/C office space) are used correctly and explained if necessary.",
+    "criterion": "Clarity and Precision of Language",
+    "explanation": "Professional, concise wording; correct sector terminology; avoids ambiguity.",
     "weight": 0.20
   }},
   {{
-    "criterion": "Paragraph Cohesion and Transitions",
-    "explanation": "Assesses if each paragraph focuses on a single idea, and if transitions between paragraphs and sections are smooth and logical, aiding comprehension.",
+    "criterion": "Concise, Scannable Rating Rationales",
+    "explanation": "Each rating followed by brief, evidence-backed bullets (why/so-what).",
+    "weight": 0.20
+  }},
+  {{
+    "criterion": "Data and Citation Legibility",
+    "explanation": "[Data source (date)], [https://…] are placed to preserve reading flow; parentheses are non-conforming; data points easy to parse.",
     "weight": 0.15
   }},
   {{
-    "criterion": "Clarity and Accuracy of Data Presentation",
-    "explanation": "Evaluates if data cited (e.g., vacancy rates, rental growth, investment volumes) is presented clearly, accurately, and sourced appropriately (if applicable), making it easy to understand.",
-    "weight": 0.15
-  }},
-  {{
-    "criterion": "Effective Use of Visualizations (Charts, Tables)",
-    "explanation": "Assesses if charts, graphs, and tables are used effectively to illustrate trends, comparisons, or complex data, and if they are well-designed, clearly labeled, and easy to interpret.",
+    "criterion": "Effective Summaries and Lists",
+    "explanation": "'Recommendation Summary' uses clear bullets; 'Service Planning' is time-phased (Immediate/90d/6–12m).",
     "weight": 0.10
   }},
   {{
-    "criterion": "Highlighting of Key Information and Summaries",
-    "explanation": "Assesses if the article effectively uses formatting (e.g., bolding, bullet points) or summary sections to highlight key findings, conclusions, and recommendations.",
-    "weight": 0.05
-  }},
-  {{
-    "criterion": "Formatting, Layout, and Overall Presentation",
-    "explanation": "Evaluates if the document's layout, font choices, spacing, and general visual presentation are professional and enhance readability, reducing reader fatigue.",
-    "weight": 0.05
-  }},
-  {{
-    "criterion": "Audience Appropriateness",
-    "explanation": "Assesses if the level of detail, terminology, and explanations are appropriate for the intended audience (e.g., investors, industry professionals).",
-    "weight": 0.05
+    "criterion": "Terminology Consistency",
+    "explanation": "Consistent casing and canonical terms across sections to reduce cognitive load.",
+    "weight": 0.10
   }}
 ]
 </json_output>
@@ -504,4 +623,5 @@ Please strictly follow the above instructions and methods. Now, begin your work 
 Please output your `<analysis>` and `<json_output>`.
 </user_prompt>
 """
+
 

@@ -201,6 +201,25 @@ Please strictly evaluate and compare `<article_1>` and `<article_2>` based on **
 2.  **Comparative Evaluation**: Analyze how the two articles perform on each criterion, referencing the content and criterion explanation.
 3.  **Score Separately**: Based on your comparative analysis, score each article on each criterion (0-10 points).
 
+**Underwriting Fairness Adjustments**
+- Prioritize underwriting usefulness over deep technical internals:
+  - Do not penalize lack of proprietary/undisclosed model internals if the report clearly identifies risk drivers, maps to sector Rules/Frameworks, and provides actionable, time‑phased controls.
+- Reward actionability and sequencing:
+  - Higher scores when recommendations are specific, prioritized (Critical/Important/Advisory), and time‑phased (Immediate/90d/6–12m), tied to drivers and constraints.
+- Treat citation formats as valid if any of:
+  - Parenthetical URLs (https://…); bracketed numeric [1]; or bracketed named sources [Data source (date)]. Do not dock for using parenthetical URLs.
+- Reward schema fidelity critical to underwriting:
+  - Exact headings/order, complete PCO ratings with rationales, fully populated Loss Potential (Frequency/Severity/Scenarios/Comments), and the verbatim Disclaimer.
+- Reward defensibility and transparency:
+  - Clear linkage: risk driver → control effectiveness → rating → loss pathway → recommendation.
+  - Proper handling of unknowns and client‑provided items (e.g., Key Contacts “Unknown …” is compliant).
+- Balance breadth vs depth appropriately:
+  - Prefer breadth across exposure categories and regulatory anchors over deep algorithmic detail when the latter is not material to underwriting decisions or not publicly available.
+- Scenario quality:
+  - Favor realistic, sector‑relevant scenarios with justified frequency/severity and explicit precursors/failure modes.
+- Regulatory/insurability emphasis:
+  - Reward explicit mapping to Rules (e.g., GDPR, DSA, COPPA), Frameworks (ISO 27701/27001/10377/23894/NIST AI RMF), and insurability implications (coverage posture, exclusions, defense sub‑limits).
+
 **Scoring Rules**
 For each criterion, score both articles on a scale of 0-10 (continuous values). The score should reflect the quality of performance on that criterion:
 *   0-2 points: Very poor performance. Almost completely fails to meet the criterion requirements.
@@ -208,6 +227,8 @@ For each criterion, score both articles on a scale of 0-10 (continuous values). 
 *   4-6 points: Average performance. Basically meets the criterion requirements, neither good nor bad.
 *   6-8 points: Good performance. Largely meets the criterion requirements with notable strengths.
 *   8-10 points: Excellent/outstanding performance. Fully meets or exceeds the criterion requirements.
+
+Note: When weighing performance on each criterion, favor underwriting utility (decision‑support clarity, control mapping, regulatory anchors, actionable plans) over non‑material technical minutiae.
 
 **Output Format Requirements**
 Please **strictly** follow the `<output_format>` below for each criterion evaluation. **Do not include any other unrelated content, introduction, or summary**. Start with "Standard 1" and proceed sequentially through all criteria:
@@ -277,6 +298,25 @@ Please strictly evaluate `<target_article>` based on **each criterion** in the `
 2.  **Analysis and Evaluation**: Analyze the article's performance on each criterion, referencing the content and criterion explanation, noting strengths and weaknesses.
 3.  **Score**: Based on your analysis, score the article on each criterion (0-10 points).
 
+**Underwriting Fairness Adjustments**
+- Prioritize underwriting usefulness over deep technical internals:
+  - Do not penalize lack of proprietary/undisclosed model internals if the report clearly identifies risk drivers, maps to sector Rules/Frameworks, and provides actionable, time‑phased controls.
+- Reward actionability and sequencing:
+  - Higher scores when recommendations are specific, prioritized (Critical/Important/Advisory), and time‑phased (Immediate/90d/6–12m), tied to drivers and constraints.
+- Treat citation formats as valid if any of:
+  - Parenthetical URLs (https://…); bracketed numeric [1]; or bracketed named sources [Data source (date)]. Do not dock for using parenthetical URLs.
+- Reward schema fidelity critical to underwriting:
+  - Exact headings/order, complete PCO ratings with rationales, fully populated Loss Potential (Frequency/Severity/Scenarios/Comments), and the verbatim Disclaimer.
+- Reward defensibility and transparency:
+  - Clear linkage: risk driver → control effectiveness → rating → loss pathway → recommendation.
+  - Proper handling of unknowns and client‑provided items (e.g., Key Contacts “Unknown …” is compliant).
+- Balance breadth vs depth appropriately:
+  - Prefer breadth across exposure categories and regulatory anchors over deep algorithmic detail when the latter is not material to underwriting decisions or not publicly available.
+- Scenario quality:
+  - Favor realistic, sector‑relevant scenarios with justified frequency/severity and explicit precursors/failure modes.
+- Regulatory/insurability emphasis:
+  - Reward explicit mapping to Rules (e.g., GDPR, DSA, COPPA), Frameworks (ISO 27701/27001/10377/23894/NIST AI RMF), and insurability implications (coverage posture, exclusions, defense sub‑limits).
+
 **Scoring Rules**
 For each criterion, score the article on a scale of 0-10 (continuous values). The score should reflect the quality of performance on that criterion:
 *   0-2 points: Very poor performance. Almost completely fails to meet the criterion requirements.
@@ -284,6 +324,8 @@ For each criterion, score the article on a scale of 0-10 (continuous values). Th
 *   4-6 points: Average performance. Basically meets the criterion requirements, neither good nor bad.
 *   6-8 points: Good performance. Largely meets the criterion requirements with notable strengths.
 *   8-10 points: Excellent/outstanding performance. Fully meets or exceeds the criterion requirements.
+
+Note: When weighing performance on each criterion, favor underwriting utility (decision‑support clarity, control mapping, regulatory anchors, actionable plans) over non‑material technical minutiae.
 
 **Output Format Requirements**
 Please **strictly** follow the `<output_format>` below for each criterion evaluation. **Do not include any other unrelated content, introduction, or summary**. Start with "Standard 1" and proceed sequentially through all criteria:
